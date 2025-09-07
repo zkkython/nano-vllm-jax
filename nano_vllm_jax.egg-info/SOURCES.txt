@@ -9,4 +9,7 @@ tests/test_llm.py
 vllm_jax/llm.py
 vllm_jax/sampling_params.py
 vllm_jax/engine/block_mng.py
+vllm_jax/engine/model_runner.py
 vllm_jax/engine/sequence.py
+vllm_jax/layers/activation.py
+vllm_jax/utils/log.py
