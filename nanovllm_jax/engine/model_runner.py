@@ -63,9 +63,27 @@ class ModelRunnerVarlen:
         self.warmup_model()
         self.allocate_kv_cache()
 
+        # 暂时移除 JIT 编译，看看是否还有其他问题
+        # self._create_jitted_functions()
+
     def warmup_model(self):
         """Warmup model to measure peak memory."""
         pass
+
+    def _create_jitted_functions(self):
+        """创建 JIT 编译的模型函数。
+
+        在 Tensor Parallel 中，with_sharding_constraint 必须在 JIT 编译的函数中
+        才能触发自动的集合通信（all-reduce 等）。
+        """
+        logger.info("Creating JIT compiled forward function...")
+
+        # 在 mesh 上下文中使用 nnx.jit 编译模型
+        with self.mesh:
+            # nnx.jit 会自动处理模型的状态管理
+            self.model = nnx.jit(self.model)
+
+        logger.info("JIT compilation completed")
 
     def allocate_kv_cache(self):
         """Allocate external KV cache for each layer."""
@@ -73,7 +91,18 @@ class ModelRunnerVarlen:
         hf_config = config.hf_config
 
         # Calculate KV cache dimensions
-        num_kv_heads = hf_config.num_key_value_heads // self.world_size
+        num_kv_heads_old = hf_config.num_key_value_heads // self.world_size
+
+        # 应该使用 ModelConfig 的方法来获取正确的 KV heads 数量
+        from nanovllm_jax.configs.model_config import ModelConfig
+
+        mc = ModelConfig(model_path=config.model, trust_remote_code=True)
+        # num_kv_heads = mc.get_num_kv_heads(self.world_size)
+        num_kv_heads = mc.get_total_num_kv_heads()
+        logger.info(
+            f"num_kv_heads_old: {num_kv_heads_old}, num_kv_heads: {num_kv_heads}"
+        )
+
         head_dim = (
             hf_config.head_dim
             if hasattr(hf_config, "head_dim")
@@ -102,8 +131,14 @@ class ModelRunnerVarlen:
         # Allocate KV cache for each layer
         num_layers = hf_config.num_hidden_layers
         self.kv_caches = []
+        # num_kv_heads 已经是按照tp 切分过的数据了
+
+        from jax.sharding import PartitionSpec as P, NamedSharding
 
         for _ in range(num_layers):
+            # KV Cache 需要在 KV head 维度上分片
+            # shape: [num_blocks, block_size, num_kv_heads, head_dim]
+            # sharding: (None, None, "tensor", None) - 在 num_kv_heads 维度分片
             k_cache = jnp.zeros(
                 (
                     config.num_kvcache_blocks,
@@ -122,6 +157,15 @@ class ModelRunnerVarlen:
                 ),
                 dtype=dtype,
             )
+
+            # 将 KV cache 分片到各个设备
+            # 因为 K/V 投影权重是按 num_kv_heads 维度切分的
+            kv_sharding = NamedSharding(self.mesh, P(None, None, "tensor", None))
+            k_cache = jax.device_put(k_cache, kv_sharding)
+            v_cache = jax.device_put(v_cache, kv_sharding)
+
+            logger.info(f"KV cache sharding: {k_cache.sharding}")
+
             self.kv_caches.append((k_cache, v_cache))
 
     def prepare_block_tables(self, seqs: List[Sequence]) -> jnp.ndarray:
@@ -237,12 +281,25 @@ class ModelRunnerVarlen:
         self, input_ids: jnp.ndarray, positions: jnp.ndarray, is_prefill: bool
     ) -> jnp.ndarray:
         """Run the model forward pass with varlen attention."""
-        # Use varlen model with external KV cache
-        logits, self.kv_caches = self.model(
-            input_ids,
-            positions=positions,
-            kv_caches=self.kv_caches,
-        )
+        # 在 mesh 上下文中执行
+        # 即使没有 JIT，with_sharding_constraint 也会触发 all-reduce
+        with self.mesh:
+            from jax.sharding import PartitionSpec as P
+
+            # 确保输入是 replicated 的
+            input_ids = jax.lax.with_sharding_constraint(input_ids, P(None))
+            positions = jax.lax.with_sharding_constraint(positions, P(None))
+
+            logger.debug(
+                f"Input IDs shape: {input_ids.shape}, Positions shape: {positions.shape}"
+            )
+
+            # 直接调用模型（不使用 JIT）
+            logits, self.kv_caches = self.model(
+                input_ids,
+                positions=positions,
+                kv_caches=self.kv_caches,
+            )
 
         # Extract logits for sampling
         if is_prefill:

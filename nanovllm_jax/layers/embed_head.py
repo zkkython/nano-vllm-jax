@@ -4,7 +4,10 @@ import jax.numpy as jnp
 from flax import nnx
 from flax.nnx.nn import dtypes
 from flax.nnx.nn.linear import default_embed_init
+from jax.sharding import PartitionSpec as P
+import logging
 
+logger = logging.getLogger(__name__)
 init_fn = nnx.initializers.uniform()
 
 
@@ -74,7 +77,11 @@ class Embed(nnx.Module):
         )
         if self.num_embeddings == 1:
             return jnp.broadcast_to(embedding, inputs.shape + (self.features,))
-        return jnp.take(embedding, inputs, axis=0)
+        
+        output = jnp.take(embedding, inputs, axis=0)
+        # Embedding 输出应该是 replicated 的（在所有设备上相同）
+        output = jax.lax.with_sharding_constraint(output, P(None, None))
+        return output
 
     def attend(self, query: jax.Array) -> jax.Array:
         """Attend over the embedding using a query array.
@@ -114,4 +121,9 @@ class ParallelLMHead(nnx.Module):
 
     def __call__(self, hidden_states: jax.Array) -> jax.Array:
         hidden_states = hidden_states.astype(self.dtype)
-        return hidden_states @ self.weight.value.T
+        logits = hidden_states @ self.weight.value.T
+        # LM Head 输出应该是 replicated 的（所有设备看到完整的 vocab）
+        # 这样每个设备都能独立采样
+        logits = jax.lax.with_sharding_constraint(logits, P(None, None))
+        logger.debug(f"LM Head output shape: {logits.shape}")
+        return logits

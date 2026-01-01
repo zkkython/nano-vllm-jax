@@ -145,7 +145,7 @@ class MLP(nnx.Module):
             dtype=dtype,
             rngs=rngs,
             use_bias=False,
-            kernel_axes=(None, "tensor"),
+            kernel_axes=("tensor", None),
         )
 
     def __call__(self, hidden_states: jax.Array) -> jax.Array:
@@ -289,6 +289,14 @@ class SelfAttentionVarlen(nnx.Module):
         k = k.reshape(num_tokens, self.num_kv_heads, self.head_dim)
         v = v.reshape(num_tokens, self.num_kv_heads, self.head_dim)
 
+        # 在 reshape 后添加 sharding constraint
+        # Q/K/V 在 heads 维度分片：(None, "tensor", None)
+        from jax.sharding import PartitionSpec as P
+
+        q = jax.lax.with_sharding_constraint(q, P(None, "tensor", None))
+        k = jax.lax.with_sharding_constraint(k, P(None, "tensor", None))
+        v = jax.lax.with_sharding_constraint(v, P(None, "tensor", None))
+
         # Normalize Q and K
         q = self.q_norm(q)
         k = self.k_norm(k)
@@ -320,8 +328,15 @@ class SelfAttentionVarlen(nnx.Module):
         k = k.reshape(num_tokens, -1)  # [num_tokens, num_kv_heads * head_dim]
         v = v.reshape(num_tokens, -1)  # [num_tokens, num_kv_heads * head_dim]
 
+        # Flatten 后也需要保持正确的 sharding：最后一维分片
+        q = jax.lax.with_sharding_constraint(q, P(None, "tensor"))
+        k = jax.lax.with_sharding_constraint(k, P(None, "tensor"))
+        v = jax.lax.with_sharding_constraint(v, P(None, "tensor"))
+
         # Apply varlen attention
         # Context must be set via set_context() before this call
+        #k_cache: [num_blocks, block_size, num_kv_heads, head_dim] (optional)
+        #v_cache: [num_blocks, block_size, num_kv_heads, head_dim] (optional)
         attn_output, k_cache, v_cache = self.attn(q, k, v, k_cache, v_cache)
 
         # Output projection
@@ -556,6 +571,22 @@ class Qwen3ForCausalLMVarlen(nnx.Module):
         model_config = ModelConfig(model_path=config.model, trust_remote_code=True)
 
         weight_mappings = self._build_weight_mappings()
+
+        # 输出 weight mappings 信息用于调试
+        logger.info("Weight mappings for MLP layers:")
+        for layer_id in range(min(2, self.config.num_hidden_layers)):  # 只显示前2层
+            for proj in ["gate_proj", "up_proj", "down_proj", "o_proj"]:
+                key = (
+                    f"model.layers.{layer_id}.mlp.{proj}.weight"
+                    if "proj" in proj and proj != "o_proj"
+                    else f"model.layers.{layer_id}.self_attn.o_proj.weight"
+                )
+                if key in weight_mappings:
+                    mapping = weight_mappings[key]
+                    logger.info(
+                        f"  Layer {layer_id} {proj}: sharding={mapping.sharding}"
+                    )
+
         loader = WeightLoader(
             model=self,
             model_config=model_config,
@@ -575,14 +606,15 @@ class Qwen3ForCausalLMVarlen(nnx.Module):
         - O/Down:         sharding=('tensor', None)
         """
         weight_mappings: dict[str, WeightMapping] = {
-            # Vocab-parallel embedding and LM head
+            # Embedding and LM head are replicated (not sharded)
+            # 所有设备保存完整的 vocab，embedding 查找可以本地执行
             "model.embed_tokens.weight": WeightMapping(
                 target_path="transformers.embed_tokens.embedding",
-                sharding=("tensor", None),
+                # No sharding - replicated across all devices
             ),
             "lm_head.weight": WeightMapping(
                 target_path="lm_head.weight",
-                sharding=("tensor", None),
+                # No sharding - replicated across all devices
             ),
         }
 
@@ -636,7 +668,8 @@ class Qwen3ForCausalLMVarlen(nnx.Module):
             )
 
             # MLP projections
-            for proj in ["gate_proj", "up_proj", "down_proj"]:
+            # gate_proj 和 up_proj 是 column-parallel: (None, "tensor")
+            for proj in ["gate_proj", "up_proj"]:
                 hf_key = f"{hf_prefix}.mlp.{proj}.weight"
                 target = f"{nnx_prefix}.mlp.{proj}.weight"
                 weight_mappings[hf_key] = WeightMapping(
@@ -645,10 +678,12 @@ class Qwen3ForCausalLMVarlen(nnx.Module):
                     transpose=True,
                 )
 
-            # weight_mappings[f"{hf_prefix}.mlp.down_proj.weight"] = WeightMapping(
-            #     target_path=f"{nnx_prefix}.mlp.down_proj.weight",
-            #     sharding=("tensor", None),
-            # )
+            # down_proj 是 row-parallel: ("tensor", None)
+            weight_mappings[f"{hf_prefix}.mlp.down_proj.weight"] = WeightMapping(
+                target_path=f"{nnx_prefix}.mlp.down_proj.weight",
+                sharding=("tensor", None),
+                transpose=True,
+            )
 
         # Final layer norm
         weight_mappings["model.norm.weight"] = WeightMapping(

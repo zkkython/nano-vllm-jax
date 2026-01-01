@@ -15,6 +15,7 @@ from nanovllm_jax.utils.hf_transformers_utils import (
 
 # from sgl_jax.srt.server_args import ServerArgs
 from nanovllm_jax.utils.common_utils import get_bool_env_var
+from nanovllm_jax.utils.jax_utils import get_num_kv_heads_by_tp
 
 logger = logging.getLogger(__name__)
 
@@ -237,7 +238,6 @@ class ModelConfig:
 
     def get_num_kv_heads(self, tensor_parallel_size) -> int:
         """Returns the number of KV heads per GPU."""
-        from sgl_jax.srt.utils.jax_utils import get_num_kv_heads_by_tp
 
         total_num_kv_heads = self.get_total_num_kv_heads()
         return get_num_kv_heads_by_tp(total_num_kv_heads, tensor_parallel_size)

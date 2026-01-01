@@ -1,6 +1,14 @@
 from nanovllm_jax.llm import LLM, SamplingParams
 import os
 import warnings
+import logging
+
+# 配置日志输出
+logging.basicConfig(
+    level=logging.INFO,  # 改回 INFO，DEBUG 太多了
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
 
 # Suppress XLA warnings about missing SoL config
 os.environ["JAX_PLATFORMS"] = "cuda"
@@ -18,7 +26,7 @@ def main(args):
     # Single-prompt test
     outputs = llm.generate(
         ["你好，介绍一下你自己。"],
-        SamplingParams(temperature=0.7, max_tokens=100),
+        SamplingParams(temperature=0.7, max_tokens=50),
     )
     print("Single prompt output:\n", outputs[0]["text"])
 
@@ -32,7 +40,7 @@ def main(args):
     for i, out in enumerate(multi_outputs):
         print(f"Prompt {i}: {multi_prompts[i]}")
         print(
-            f"Response:{out["text"]}!r",
+            f"Response:{out["text"]}!",
         )
         print("-")
 
