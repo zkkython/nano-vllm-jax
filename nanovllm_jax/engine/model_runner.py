@@ -44,13 +44,15 @@ class ModelRunnerVarlen:
         self.default_dtype = jnp.bfloat16
 
         # Initialize model with varlen support, and load model weights
-        self.model = Qwen3ForCausalLMVarlen(
-            config=hf_config,
-            dtype=self.default_dtype,
-            block_size=self.block_size,
-            rngs=None,
-            mesh=self.mesh,
-        )
+        # Need to activate mesh context for sharded parameter initialization
+        with self.mesh:
+            self.model = Qwen3ForCausalLMVarlen(
+                config=hf_config,
+                dtype=self.default_dtype,
+                block_size=self.block_size,
+                rngs=None,
+                mesh=self.mesh,
+            )
         # Load pretrained weights
         self.model.load_weights(self.config)
         logger.info(f"{self.config.model} Weights loaded finished.")

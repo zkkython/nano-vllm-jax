@@ -124,13 +124,28 @@ class MLP(nnx.Module):
         intermediate_size = config.intermediate_size
 
         self.gate_proj = Linear(
-            hidden_size, intermediate_size, dtype=dtype, rngs=rngs, use_bias=False
+            hidden_size,
+            intermediate_size,
+            dtype=dtype,
+            rngs=rngs,
+            use_bias=False,
+            kernel_axes=(None, "tensor"),
         )
         self.up_proj = Linear(
-            hidden_size, intermediate_size, dtype=dtype, rngs=rngs, use_bias=False
+            hidden_size,
+            intermediate_size,
+            dtype=dtype,
+            rngs=rngs,
+            use_bias=False,
+            kernel_axes=(None, "tensor"),
         )
         self.down_proj = Linear(
-            intermediate_size, hidden_size, dtype=dtype, rngs=rngs, use_bias=False
+            intermediate_size,
+            hidden_size,
+            dtype=dtype,
+            rngs=rngs,
+            use_bias=False,
+            kernel_axes=(None, "tensor"),
         )
 
     def __call__(self, hidden_states: jax.Array) -> jax.Array:
@@ -189,6 +204,7 @@ class SelfAttentionVarlen(nnx.Module):
             dtype=dtype,
             rngs=rngs,
             use_bias=False,
+            kernel_axes=(None, "tensor"),
         )
         self.k_proj = Linear(
             hidden_size,
@@ -196,6 +212,7 @@ class SelfAttentionVarlen(nnx.Module):
             dtype=dtype,
             rngs=rngs,
             use_bias=False,
+            kernel_axes=(None, "tensor"),
         )
         self.v_proj = Linear(
             hidden_size,
@@ -203,6 +220,7 @@ class SelfAttentionVarlen(nnx.Module):
             dtype=dtype,
             rngs=rngs,
             use_bias=False,
+            kernel_axes=(None, "tensor"),
         )
         self.o_proj = Linear(
             self.num_heads * self.head_dim,
@@ -210,6 +228,7 @@ class SelfAttentionVarlen(nnx.Module):
             dtype=dtype,
             rngs=rngs,
             use_bias=False,
+            kernel_axes=("tensor", None),
         )
 
         # Layer norms for Q and K (applied on head_dim after reshape)
