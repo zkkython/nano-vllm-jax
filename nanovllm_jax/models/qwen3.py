@@ -335,8 +335,8 @@ class SelfAttentionVarlen(nnx.Module):
 
         # Apply varlen attention
         # Context must be set via set_context() before this call
-        #k_cache: [num_blocks, block_size, num_kv_heads, head_dim] (optional)
-        #v_cache: [num_blocks, block_size, num_kv_heads, head_dim] (optional)
+        # k_cache: [num_blocks, block_size, num_kv_heads, head_dim] (optional)
+        # v_cache: [num_blocks, block_size, num_kv_heads, head_dim] (optional)
         attn_output, k_cache, v_cache = self.attn(q, k, v, k_cache, v_cache)
 
         # Output projection
@@ -574,7 +574,7 @@ class Qwen3ForCausalLMVarlen(nnx.Module):
 
         # 输出 weight mappings 信息用于调试
         logger.info("Weight mappings for MLP layers:")
-        for layer_id in range(min(2, self.config.num_hidden_layers)):  # 只显示前2层
+        for layer_id in range(min(4, self.config.num_hidden_layers)):  # 只显示前2层
             for proj in ["gate_proj", "up_proj", "down_proj", "o_proj"]:
                 key = (
                     f"model.layers.{layer_id}.mlp.{proj}.weight"

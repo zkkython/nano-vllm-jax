@@ -4,12 +4,19 @@
 """
 
 import jax
+import os
+import warnings
 import jax.numpy as jnp
 from jax.sharding import Mesh, PartitionSpec as P, NamedSharding
 import logging
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Suppress XLA warnings about missing SoL config
+os.environ["JAX_PLATFORMS"] = "cuda"
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"  # Suppress TensorFlow/XLA warnings
+warnings.filterwarnings("ignore", category=UserWarning)
 
 
 def test_qkv_projection():

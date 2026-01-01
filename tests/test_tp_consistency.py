@@ -3,15 +3,15 @@
 比较 tp_size=1 和 tp_size=2 的输出是否一致
 """
 
+import os
+import warnings
 from nanovllm_jax.llm import LLM, SamplingParams
-import logging
+from nanovllm_jax.utils.logging_utils import setup_logging
 
-# 配置日志输出
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
+# Suppress XLA warnings about missing SoL config
+os.environ["JAX_PLATFORMS"] = "cuda"
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"  # Suppress TensorFlow/XLA warnings
+warnings.filterwarnings("ignore", category=UserWarning)
 
 
 def test_consistency(model_path: str):
@@ -73,6 +73,23 @@ if __name__ == "__main__":
         default="/root/.cache/modelscope/hub/models/Qwen/Qwen3-8B",
         help="模型路径",
     )
+    parser.add_argument(
+        "--log-level",
+        type=str,
+        default=None,
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        help="Logging level (default: from NANO_VLLM_LOG_LEVEL env var or INFO)",
+    )
+    parser.add_argument(
+        "--debug-modules",
+        type=str,
+        default=None,
+        help="Comma-separated list of modules to enable DEBUG logging",
+    )
     args = parser.parse_args()
+
+    # Setup logging
+    debug_modules = args.debug_modules.split(",") if args.debug_modules else None
+    setup_logging(level=args.log_level, enable_debug_modules=debug_modules)
 
     test_consistency(args.model_path)

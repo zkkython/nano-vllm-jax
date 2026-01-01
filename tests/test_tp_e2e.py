@@ -3,13 +3,18 @@
 直接测试简化版的 Transformer layer
 """
 
+import os
+import warnings
 import jax
 import jax.numpy as jnp
 from jax.sharding import Mesh, PartitionSpec as P, NamedSharding
-import logging
+from nanovllm_jax.utils.logging_utils import setup_logging, get_logger
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
+# Suppress XLA warnings about missing SoL config
+os.environ["JAX_PLATFORMS"] = "cuda"
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"  # Suppress TensorFlow/XLA warnings
+warnings.filterwarnings("ignore", category=UserWarning)
 
 
 def test_simple_linear_tp():
@@ -95,6 +100,21 @@ def test_with_jit():
 
 
 if __name__ == "__main__":
+    import argparse
+    
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--log-level",
+        type=str,
+        default="INFO",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        help="Logging level",
+    )
+    args = parser.parse_args()
+    
+    # Setup logging
+    setup_logging(level=args.log_level)
+    
     logger.info("=" * 80)
     logger.info("测试简单线性层 TP（无JIT）")
     logger.info("=" * 80)

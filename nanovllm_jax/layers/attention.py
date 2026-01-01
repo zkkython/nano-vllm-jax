@@ -80,26 +80,26 @@ def varlen_attention(
     head_dim = q.shape[2]
     num_seqs = len(cu_seqlens_q) - 1
 
-    logger.info(
+    logger.debug(
         f"varlen_attention: num_heads={num_heads}, num_kv_heads={num_kv_heads}， head_dim={head_dim}"
     )
-    logger.info(f"q global shape={q.shape}, sharding={getattr(q, 'sharding', None)}")
+    logger.debug(f"q global shape={q.shape}, sharding={getattr(q, 'sharding', None)}")
 
     for i, shard in enumerate(q.addressable_shards):
-        logger.info(f"Local q shard {i} local shape={shard.data.shape}")
+        logger.debug(f"Local q shard {i} local shape={shard.data.shape}")
     for i, shard in enumerate(k.addressable_shards):
-        logger.info(f"Local k shard {i} local shape={shard.data.shape}")
+        logger.debug(f"Local k shard {i} local shape={shard.data.shape}")
     for i, shard in enumerate(v.addressable_shards):
-        logger.info(f"Local v shard {i} local shape={shard.data.shape}")
+        logger.debug(f"Local v shard {i} local shape={shard.data.shape}")
     # Handle grouped-query attention: repeat k, v to match num_heads
     # 在 Tensor Parallel 中，这个 repeat 是在每个设备上本地执行的
     # 例如：device 0 有 16 Q heads 和 4 KV heads，repeat 4次得到 16 KV heads
     if num_kv_heads != num_heads:
         repeat_factor = num_heads // num_kv_heads
-        logger.info(f"GQA: repeating K/V by factor {repeat_factor}")
+        logger.debug(f"GQA: repeating K/V by factor {repeat_factor}")
         k = jnp.repeat(k, repeat_factor, axis=1)
         v = jnp.repeat(v, repeat_factor, axis=1)
-        logger.info(f"After repeat: k.shape={k.shape}, v.shape={v.shape}")
+        logger.debug(f"After repeat: k.shape={k.shape}, v.shape={v.shape}")
 
     # Process each sequence separately and concatenate results
     outputs = []

@@ -90,18 +90,12 @@ class ModelRunnerVarlen:
         config = self.config
         hf_config = config.hf_config
 
-        # Calculate KV cache dimensions
-        num_kv_heads_old = hf_config.num_key_value_heads // self.world_size
-
         # 应该使用 ModelConfig 的方法来获取正确的 KV heads 数量
         from nanovllm_jax.configs.model_config import ModelConfig
 
         mc = ModelConfig(model_path=config.model, trust_remote_code=True)
-        # num_kv_heads = mc.get_num_kv_heads(self.world_size)
+        # 获取全局的 KV heads 数量，通过tp 切分
         num_kv_heads = mc.get_total_num_kv_heads()
-        logger.info(
-            f"num_kv_heads_old: {num_kv_heads_old}, num_kv_heads: {num_kv_heads}"
-        )
 
         head_dim = (
             hf_config.head_dim
@@ -164,11 +158,11 @@ class ModelRunnerVarlen:
             k_cache = jax.device_put(k_cache, kv_sharding)
             v_cache = jax.device_put(v_cache, kv_sharding)
 
-            logger.info(f"KV cache sharding: {k_cache.sharding}")
+            logger.debug(f"KV cache sharding: {k_cache.sharding}, {v_cache.sharding}")
 
             self.kv_caches.append((k_cache, v_cache))
 
-    def prepare_block_tables(self, seqs: List[Sequence]) -> jnp.ndarray:
+    def prepare_block_tables(self, seqs: List[Sequence]) -> jnp.ndarray | None:
         """Prepare block tables from sequences."""
         if not seqs:
             return jnp.array([], dtype=jnp.int32)
@@ -291,7 +285,7 @@ class ModelRunnerVarlen:
             positions = jax.lax.with_sharding_constraint(positions, P(None))
 
             logger.debug(
-                f"Input IDs shape: {input_ids.shape}, Positions shape: {positions.shape}"
+                f"Input IDs shape: {input_ids.shape} sharding {input_ids.sharding}, Positions shape: {positions.shape} sharding {positions.sharding}"
             )
 
             # 直接调用模型（不使用 JIT）
@@ -318,7 +312,7 @@ class ModelRunnerVarlen:
 
         return logits
 
-    def run(self, seqs: List[Sequence], is_prefill: bool) -> List[int]:
+    def run(self, seqs: List[Sequence], is_prefill: bool) -> List[int] | None:
         """Run inference on sequences."""
         input_ids, positions = (
             self.prepare_prefill(seqs) if is_prefill else self.prepare_decode(seqs)
