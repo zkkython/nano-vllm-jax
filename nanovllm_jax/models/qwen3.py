@@ -587,10 +587,19 @@ class Qwen3ForCausalLMVarlen(nnx.Module):
             for proj in ["q_proj", "k_proj", "v_proj"]:
                 hf_key = f"{hf_prefix}.self_attn.{proj}.weight"
                 target = f"{nnx_prefix}.self_attn.{proj}.weight"
-                weight_mappings[hf_key] = WeightMapping(
-                    target_path=target,
-                    sharding=(None, "tensor"),
-                )
+                if proj in ["k_proj", "v_proj"]:
+                    weight_mappings[hf_key] = WeightMapping(
+                        target_path=target,
+                        sharding=(None, "tensor"),
+                        transpose=True,
+                        kv_head_padding=True,
+                    )
+                else:
+                    weight_mappings[hf_key] = WeightMapping(
+                        target_path=target,
+                        sharding=(None, "tensor"),
+                        transpose=True,
+                    )
 
             weight_mappings[f"{hf_prefix}.self_attn.q_norm.weight"] = WeightMapping(
                 target_path=f"{nnx_prefix}.self_attn.q_norm.weight",
@@ -604,21 +613,23 @@ class Qwen3ForCausalLMVarlen(nnx.Module):
             weight_mappings[f"{hf_prefix}.self_attn.o_proj.weight"] = WeightMapping(
                 target_path=f"{nnx_prefix}.self_attn.o_proj.weight",
                 sharding=("tensor", None),
+                transpose=True,
             )
 
             # MLP projections
-            for proj in ["gate_proj", "up_proj"]:
+            for proj in ["gate_proj", "up_proj", "down_proj"]:
                 hf_key = f"{hf_prefix}.mlp.{proj}.weight"
                 target = f"{nnx_prefix}.mlp.{proj}.weight"
                 weight_mappings[hf_key] = WeightMapping(
                     target_path=target,
                     sharding=(None, "tensor"),
+                    transpose=True,
                 )
 
-            weight_mappings[f"{hf_prefix}.mlp.down_proj.weight"] = WeightMapping(
-                target_path=f"{nnx_prefix}.mlp.down_proj.weight",
-                sharding=("tensor", None),
-            )
+            # weight_mappings[f"{hf_prefix}.mlp.down_proj.weight"] = WeightMapping(
+            #     target_path=f"{nnx_prefix}.mlp.down_proj.weight",
+            #     sharding=("tensor", None),
+            # )
 
         # Final layer norm
         weight_mappings["model.norm.weight"] = WeightMapping(

@@ -17,7 +17,7 @@ class Linear(nnx.Module):
         self.dtype = dtype
         self.use_bias = use_bias
 
-        w_shape = (out_features, in_features)
+        w_shape = (in_features, out_features)
         self.weight = nnx.Param(
             jax.random.normal(jax.random.PRNGKey(0), w_shape, dtype)
             * (1.0 / jnp.sqrt(in_features))
@@ -29,7 +29,7 @@ class Linear(nnx.Module):
 
     def __call__(self, x: jax.Array) -> jax.Array:
         w = self.weight.value
-        y = x @ w.T
+        y = jnp.dot(x, w)
         if self.bias is not None:
             y = y + self.bias.value
         return y.astype(self.dtype)

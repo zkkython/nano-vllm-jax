@@ -12,7 +12,7 @@ def main(args):
     llm = LLM(
         args.model_path,
         max_model_len=2048,
-        tensor_parallel_size=args.tensor_parallel_size,
+        tensor_parallel_size=args.tp_size,
     )
 
     # Single-prompt test
@@ -23,10 +23,7 @@ def main(args):
     print("Single prompt output:\n", outputs[0]["text"])
 
     # Multi-prompt test (same length prompts to trigger batched prefill/decode)
-    multi_prompts = [
-        "中国的首都是哪里",
-        "列出100以内的质数",
-    ]
+    multi_prompts = ["中国的首都在哪里", "列出100以内的质数", "解释一下什么是量子力学"]
     multi_outputs = llm.generate(
         multi_prompts,
         SamplingParams(temperature=0.7, max_tokens=100),
@@ -50,7 +47,6 @@ if __name__ == "__main__":
         default="/root/.cache/modelscope/hub/models/Qwen/Qwen3-8B",
     )
     parser.add_argument(
-        "--tensor-parallel-size",
         "--tp-size",
         type=int,
         default=1,
